@@ -1,0 +1,39 @@
+# Web framework
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+python-multipart==0.0.9        # required for FastAPI file uploads (UploadFile)
+
+# Config
+pydantic-settings==2.3.4
+python-dotenv==1.0.1
+
+# Database
+sqlalchemy==2.0.31
+
+# LangSmith (tracing & eval)
+langsmith>=0.1.0
+
+# LangChain + LangGraph
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-google-genai>=2.0.0,<3.0.0
+langchain-ollama>=0.3.0
+langchain-chroma>=0.2.0
+langchain-text-splitters>=0.3.0
+langgraph>=0.3.0
+langgraph-checkpoint-sqlite>=3.0.0
+
+# Vector DB
+chromadb==0.5.3
+
+# Google AI
+google-generativeai==0.7.2
+
+# HTTP (used in stt_service + tts_service)
+requests==2.32.3
+
+# Audio processing (stt_service segment splitting)
+pydub==0.25.1
+
+# Evaluation (GPT-4o as judge)
+openai>=1.0.0
