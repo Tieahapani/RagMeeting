@@ -3,8 +3,9 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     gemini_api_key: str
+    database_url: str = "sqlite:///./ragmeeting.db"  # override with PostgreSQL URL for production
     chroma_db_path: str = "./chroma_db"
-    hf_token: str #This is the hugging face token 
+    hf_token: str #This is the hugging face token
     embedding_model: str = "models/gemini-embedding-001"
     llm_model: str = "gemini-2.0-flash"
     llm_provider: str = "gemini"       # "gemini" or "ollama"

@@ -4,6 +4,7 @@ python-multipart==0.0.9
 pydantic-settings==2.3.4
 python-dotenv==1.0.1
 sqlalchemy==2.0.31
+psycopg2-binary==2.9.9
 
 # Let these resolve together
 langchain
