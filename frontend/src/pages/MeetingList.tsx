@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { API_BASE } from '../config'
 
 interface Meeting {
   id: string
@@ -15,7 +16,7 @@ function MeetingList() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    fetch('http://localhost:8000/meetings/')
+    fetch(`${API_BASE}/meetings/`)
       .then((res) => res.json())
       .then((data) => {
         setMeetings(data)

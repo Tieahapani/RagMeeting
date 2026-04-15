@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
+import { API_BASE } from '../config'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ function MeetingDetail() {
 
   // Fetch current LLM provider on mount
   useEffect(() => {
-    fetch('http://localhost:8000/settings/provider')
+    fetch(`${API_BASE}/settings/provider`)
       .then((res) => res.json())
       .then((data) => setProvider(data.provider))
       .catch(() => {})
@@ -57,7 +58,7 @@ function MeetingDetail() {
     const next = provider === 'gemini' ? 'ollama' : 'gemini'
     setSwitching(true)
     try {
-      const res = await fetch('http://localhost:8000/settings/provider', {
+      const res = await fetch(`${API_BASE}/settings/provider`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: next }),
@@ -69,7 +70,7 @@ function MeetingDetail() {
   }
 
   useEffect(() => {
-    fetch(`http://localhost:8000/meetings/${id}`)
+    fetch(`${API_BASE}/meetings/${id}`)
       .then((res) => {
         if (!res.ok) throw new Error('Meeting not found')
         return res.json()
@@ -104,7 +105,7 @@ function MeetingDetail() {
     ])
 
     try {
-      const res = await fetch('http://localhost:8000/query/stream', {
+      const res = await fetch(`${API_BASE}/query/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -358,7 +359,7 @@ function MeetingDetail() {
                   {msg.audio_url && (
                     <audio
                       controls
-                      src={`http://localhost:8000${msg.audio_url}`}
+                      src={`${API_BASE}${msg.audio_url}`}
                       className="mt-2 w-full h-8"
                     />
                   )}

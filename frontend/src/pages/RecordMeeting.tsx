@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { API_BASE } from '../config'
 
 function RecordMeeting() {
   const [isRecording, setIsRecording] = useState(false)
@@ -16,7 +17,7 @@ function RecordMeeting() {
     setError('')
 
     try {
-      const res = await fetch('http://localhost:8000/meetings/start', {
+      const res = await fetch(`${API_BASE}/meetings/start`, {
         method: 'POST',
       })
       const data = await res.json()
@@ -63,7 +64,7 @@ function RecordMeeting() {
       const formData = new FormData()
       formData.append('audio', audioBlob, 'recording.webm')
 
-      const res = await fetch(`http://localhost:8000/meetings/${meetingId}/stop`, {
+      const res = await fetch(`${API_BASE}/meetings/${meetingId}/stop`, {
         method: 'POST',
         body: formData,
       })

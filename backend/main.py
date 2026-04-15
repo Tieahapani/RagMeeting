@@ -23,7 +23,10 @@ app = FastAPI(title="RAGMeeting API", lifespan=lifespan)
 # ── CORS ──────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # React dev server port
+    allow_origins=[
+        "http://localhost:5173",       # local dev
+        "https://rag-meeting-6178.vercel.app",  # production frontend
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
