@@ -1,15 +1,11 @@
 import time
-import io 
 import logging
-import requests 
-from pydub import AudioSegment
+import requests
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 HF_WHISPER_URL = "https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo"
-
-SEGMENT_DURATION_MS = 10 * 60 * 1000 
 
 
 def _transcribe_chunk(audio_bytes: bytes, max_retries: int = 3) -> str:
@@ -50,43 +46,6 @@ def _transcribe_chunk(audio_bytes: bytes, max_retries: int = 3) -> str:
     raise RuntimeError(f"Whisper API failed after {max_retries} attempts")
 
 
-def _split_audio(audio_bytes: bytes) -> list[bytes]: 
-    """Split audio into segments of SEGMENT_DURATION_MS. Uses pydub to detect format, split, and export each segment as webm."""
-    audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
-    duration_ms = len(audio)
-
-    # Short audio - no splititng needed 
-    if duration_ms <= SEGMENT_DURATION_MS: 
-        return [audio_bytes]
-    segments = []
-    for start in range(0, duration_ms, SEGMENT_DURATION_MS): 
-        end = min(start + SEGMENT_DURATION_MS, duration_ms)
-        chunk = audio[start:end]
-
-        buffer = io.BytesIO()
-        chunk.export(buffer, format="webm")
-        segments.append(buffer.getvalue())
-
-    logger.info(f"Split {duration_ms/1000:.0f}s audio into {len(segments)} segments")  
-    return segments
-
 def transcribe_audio(audio_bytes: bytes, max_retries: int = 3) -> str:
-    """Transcribe audio of any length, splitting long audio into segments."""
-    segments = _split_audio(audio_bytes)
-
-    if len(segments) == 1:
-        return _transcribe_chunk(audio_bytes, max_retries)
-
-    transcripts = []
-    for i, segment in enumerate(segments):
-        logger.info(f"Transcribing segment {i+1}/{len(segments)}")
-        text = _transcribe_chunk(segment, max_retries)
-        if text:
-            transcripts.append(text)
-
-    full_transcript = " ".join(transcripts)
-
-    if not full_transcript.strip():
-        raise RuntimeError("Whisper returned empty transcript for all segments")
-
-    return full_transcript
+    """Transcribe audio by sending directly to Whisper API (supports up to 25MB)."""
+    return _transcribe_chunk(audio_bytes, max_retries)
