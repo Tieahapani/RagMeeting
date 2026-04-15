@@ -33,13 +33,6 @@ You are an expert meeting analyst. Analyze the meeting transcript below and extr
 Only include information that is explicitly stated in the transcript.
 Do not infer or add anything not discussed.
 
-Respond with valid JSON in this exact format:
-{{
-  "summary": "3-4 sentence overview",
-  "key_points": ["point1", "point2"],
-  "action_items": [{{"task": "...", "owner": "..." or null, "due_date": "..." or null}}]
-}}
-
 Transcript:
 {transcript}
 """)
@@ -53,6 +46,6 @@ def summarize_transcript(transcript: str) -> MeetingSummary:
         google_api_key=settings.gemini_api_key,
         temperature=0,
     )
-    structured_llm = llm.with_structured_output(MeetingSummary, method="json_mode")
+    structured_llm = llm.with_structured_output(MeetingSummary)
     chain = SUMMARY_PROMPT | structured_llm
     return chain.invoke({"transcript": transcript})
