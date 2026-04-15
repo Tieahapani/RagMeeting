@@ -30,9 +30,6 @@ You are an expert meeting analyst. Analyze the meeting transcript below and extr
 Only include information that is explicitly stated in the transcript.
 Do not infer or add anything not discussed.
 
-Respond with valid JSON matching this schema:
-{schema}
-
 Transcript:
 {transcript}
 """)
