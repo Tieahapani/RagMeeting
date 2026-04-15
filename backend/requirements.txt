@@ -12,12 +12,10 @@ langchain-community
 langchain-core
 langchain-google-genai
 langchain-ollama
-langchain-chroma
+langchain-postgres
 langchain-text-splitters
 langgraph
 langgraph-checkpoint-sqlite
-
-chromadb==0.5.3
 google-generativeai==0.7.2
 requests==2.32.3
 openai>=1.0.0

@@ -3,7 +3,7 @@ import time
 import logging
 
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_chroma import Chroma
+from langchain_postgres import PGVector
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.retrievers import EnsembleRetriever
@@ -35,19 +35,19 @@ def _query_embeddings() -> GoogleGenerativeAIEmbeddings:
     )
 
 
-def get_vectorstore(meeting_id: str, for_query: bool = False) -> Chroma:
+def get_vectorstore(meeting_id: str, for_query: bool = False) -> PGVector:
     """
-    Return a Chroma collection scoped to a single meeting.
+    Return a PGVector collection scoped to a single meeting.
 
     Uses separate embedding objects for document storage vs query time
-    to match how text-embedding-004 was trained.
+    to match how Gemini embedding model was trained.
     """
     embeddings = _query_embeddings() if for_query else _doc_embeddings()
-    return Chroma(
+    return PGVector(
         collection_name=f"meeting_{meeting_id}",
-        embedding_function=embeddings,
-        persist_directory=settings.chroma_db_path,
-        collection_metadata={"hnsw:space": "cosine"},
+        embeddings=embeddings,
+        connection=settings.database_url,
+        use_jsonb=True,
     )
 
 
@@ -75,7 +75,6 @@ def _split_by_speaker(transcript: str) -> list[str]:
         if len(turn) <= settings.chunk_size:
             chunks.append(turn)
         else:
-            # Long monologue — sub-split but keep speaker label on first sub-chunk
             sub_chunks = fallback_splitter.split_text(turn)
             chunks.extend(sub_chunks)
 
@@ -84,7 +83,7 @@ def _split_by_speaker(transcript: str) -> list[str]:
 
 def ingest_transcript(transcript: str, meeting_id: str) -> int:
     """
-    Split a transcript into chunks and store them in Chroma.
+    Split a transcript into chunks and store them in PGVector.
 
     Strategy:
     1. Try speaker-aware chunking (split on "Name:" labels)
@@ -92,10 +91,8 @@ def ingest_transcript(transcript: str, meeting_id: str) -> int:
 
     Returns the number of chunks ingested.
     """
-    # Try speaker-aware first
     chunks = _split_by_speaker(transcript)
 
-    # Fallback: no speaker labels detected
     if not chunks:
         logger.info("No speaker labels found — using fixed-size chunking")
         splitter = RecursiveCharacterTextSplitter(
@@ -119,35 +116,45 @@ def ingest_transcript(transcript: str, meeting_id: str) -> int:
     vectorstore.add_documents(docs)
     return len(docs)
 
-def _get_all_docs(vs: Chroma) -> list[Document]: 
-    """Fetch all documents from a Chroma colletion for BM25."""
-    result = vs.get()
-    if not result or not result.get("documents"): 
-        return []
+
+def _get_all_docs(meeting_id: str) -> list[Document]:
+    """Fetch all documents from PGVector collection for BM25 using direct SQL."""
+    from sqlalchemy import create_engine, text
+    engine = create_engine(settings.database_url)
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("""
+                SELECT e.document, e.cmetadata
+                FROM langchain_pg_embedding e
+                JOIN langchain_pg_collection c ON e.collection_id = c.uuid
+                WHERE c.name = :collection_name
+            """),
+            {"collection_name": f"meeting_{meeting_id}"},
+        ).fetchall()
     return [
-        Document(page_content=content, metadata=meta)
-        for content, meta in zip(result["documents"], result["metadatas"])
+        Document(page_content=row[0], metadata=row[1])
+        for row in rows if row[0]
     ]
+
 
 def retrieve(query: str, meeting_ids: list[str], k: int = 3, max_retries: int = 5) -> list[Document]:
     """
-    Hybrid retrieval using EnsembleRetriever:                                                                                                                            
-      - Semantic search (Chroma vector store)                                                                                                                                
+    Hybrid retrieval using EnsembleRetriever:
+      - Semantic search (PGVector)
       - Keyword search (BM25)
-      - Merged with Reciprocal Rank Fusion (weights: 0.5 / 0.5)  
+      - Merged with Reciprocal Rank Fusion (weights: 0.5 / 0.5)
     """
     all_docs: list[Document] = []
 
     for meeting_id in meeting_ids:
         vs = get_vectorstore(meeting_id, for_query=True)
 
-        # Semantic retriever from Chroma
+        # Semantic retriever from PGVector
         vector_retriever = vs.as_retriever(search_kwargs={"k": k})
 
         # BM25 retriever from same docs
-        collection_docs = _get_all_docs(vs)
+        collection_docs = _get_all_docs(meeting_id)
         if not collection_docs:
-            # Fallback: semantic only if collection is empty
             for attempt in range(max_retries):
                 try:
                     results = vector_retriever.invoke(query)
@@ -188,6 +195,6 @@ def retrieve(query: str, meeting_ids: list[str], k: int = 3, max_retries: int = 
 
 
 def delete_meeting(meeting_id: str) -> None:
-    """Remove all vectors for a meeting from Chroma."""
+    """Remove all vectors for a meeting from PGVector."""
     vs = get_vectorstore(meeting_id)
     vs.delete_collection()
