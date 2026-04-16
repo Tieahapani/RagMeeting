@@ -25,7 +25,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",       # local dev
-        "https://rag-meeting-6178.vercel.app",  # production frontend
+        "https://rag-meeting-afwu.vercel.app",  # production frontend
     ],
     allow_methods=["*"],
     allow_headers=["*"],
