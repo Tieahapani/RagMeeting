@@ -43,7 +43,6 @@ def summarize_transcript(transcript: str) -> MeetingSummary:
         google_api_key=settings.gemini_api_key,
         temperature=0.0,
     )
-    # ✅ Remove `method="json_mode"`; Gemini handles structured output via schema
     structured_llm = llm.with_structured_output(MeetingSummary)
     chain = SUMMARY_PROMPT | structured_llm
     return chain.invoke({"transcript": transcript})

@@ -6,16 +6,14 @@ python-dotenv==1.0.1
 sqlalchemy==2.0.31
 psycopg2-binary==2.9.9
 
-# Let these resolve together
-langchain>=0.3.0
-langchain-community>=0.3.0
+# LangChain — only what we actually use (no langchain base package)
 langchain-core>=0.3.0
+langchain-community>=0.3.0
 langchain-google-genai>=2.1.0
-langchain-ollama
 langchain-postgres
 langchain-text-splitters
 langgraph
-langgraph-checkpoint-sqlite
+
 google-generativeai
 requests>=2.32.5
 openai>=1.0.0

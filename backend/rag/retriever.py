@@ -6,7 +6,6 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_postgres import PGVector
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.retrievers import EnsembleRetriever
 from langchain_community.retrievers import BM25Retriever
 
 from config.settings import settings
@@ -137,9 +136,24 @@ def _get_all_docs(meeting_id: str) -> list[Document]:
     ]
 
 
+def _reciprocal_rank_fusion(ranked_lists: list[list[Document]], weights: list[float], rrf_k: int = 60) -> list[Document]:
+    """Merge multiple ranked doc lists using Reciprocal Rank Fusion."""
+    scores: dict[str, float] = {}
+    doc_map: dict[str, Document] = {}
+
+    for docs, weight in zip(ranked_lists, weights):
+        for rank, doc in enumerate(docs):
+            key = doc.page_content
+            doc_map[key] = doc
+            scores[key] = scores.get(key, 0.0) + weight / (rrf_k + rank + 1)
+
+    sorted_keys = sorted(scores, key=scores.get, reverse=True)
+    return [doc_map[k] for k in sorted_keys]
+
+
 def retrieve(query: str, meeting_ids: list[str], k: int = 3, max_retries: int = 5) -> list[Document]:
     """
-    Hybrid retrieval using EnsembleRetriever:
+    Hybrid retrieval:
       - Semantic search (PGVector)
       - Keyword search (BM25)
       - Merged with Reciprocal Rank Fusion (weights: 0.5 / 0.5)
@@ -148,11 +162,8 @@ def retrieve(query: str, meeting_ids: list[str], k: int = 3, max_retries: int = 
 
     for meeting_id in meeting_ids:
         vs = get_vectorstore(meeting_id, for_query=True)
-
-        # Semantic retriever from PGVector
         vector_retriever = vs.as_retriever(search_kwargs={"k": k})
 
-        # BM25 retriever from same docs
         collection_docs = _get_all_docs(meeting_id)
         if not collection_docs:
             for attempt in range(max_retries):
@@ -171,16 +182,15 @@ def retrieve(query: str, meeting_ids: list[str], k: int = 3, max_retries: int = 
 
         bm25_retriever = BM25Retriever.from_documents(collection_docs, k=k)
 
-        # Combine: 50% semantic + 50% keyword
-        ensemble = EnsembleRetriever(
-            retrievers=[vector_retriever, bm25_retriever],
-            weights=[0.5, 0.5],
-        )
-
         for attempt in range(max_retries):
             try:
-                results = ensemble.invoke(query)
-                all_docs.extend(results)
+                semantic_results = vector_retriever.invoke(query)
+                bm25_results = bm25_retriever.invoke(query)
+                merged = _reciprocal_rank_fusion(
+                    [semantic_results, bm25_results],
+                    weights=[0.5, 0.5],
+                )
+                all_docs.extend(merged)
                 break
             except Exception as e:
                 if attempt < max_retries - 1:
