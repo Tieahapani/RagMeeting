@@ -15,12 +15,16 @@ def _transcribe_chunk(audio_bytes: bytes, max_retries: int = 3) -> str:
         "Content-Type": "audio/webm",
     }
 
+    logger.info(f"Whisper request: audio_bytes size = {len(audio_bytes)}, first 20 bytes = {audio_bytes[:20]}")
+
     for attempt in range(max_retries):
         response = requests.post(
             HF_WHISPER_URL,
             headers=headers,
             data=audio_bytes,
         )
+
+        logger.info(f"Whisper response: status={response.status_code}, body={response.text[:500]}")
 
         if response.status_code == 503:
             wait = 20 if attempt == 0 else 10
