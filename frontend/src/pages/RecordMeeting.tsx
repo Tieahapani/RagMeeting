@@ -71,10 +71,29 @@ function RecordMeeting() {
 
       if (!res.ok) throw new Error('Backend returned an error')
 
-      setStatus('Done! Redirecting...')
-      setTimeout(() => navigate(`/meeting/${meetingId}`), 1000)
+      // Poll until processing is done
+      const poll = setInterval(async () => {
+        try {
+          const statusRes = await fetch(`${API_BASE}/meetings/${meetingId}`)
+          if (!statusRes.ok) return
+          const data = await statusRes.json()
+
+          if (data.status === 'processed') {
+            clearInterval(poll)
+            setStatus('Done! Redirecting...')
+            setTimeout(() => navigate(`/meeting/${meetingId}`), 1000)
+          } else if (data.status === 'failed') {
+            clearInterval(poll)
+            setError('Processing failed. Your recording is saved — you can retry later.')
+            setStatus('Error occurred')
+            setProcessing(false)
+          }
+        } catch {
+          // ignore polling errors, keep trying
+        }
+      }, 3000)
     } catch {
-      setError('Failed to process recording. Please try again.')
+      setError('Failed to upload recording. Please try again.')
       setStatus('Error occurred')
       setProcessing(false)
     }

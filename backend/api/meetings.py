@@ -1,6 +1,6 @@
 import uuid 
 from datetime import datetime 
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session 
 from pydantic import BaseModel 
 
@@ -36,15 +36,6 @@ Transcript:
 class MeetingStartResponse(BaseModel):
     meeting_id: str
     started_at: str
-
-
-class MeetingStopResponse(BaseModel):
-    meeting_id: str
-    title: str
-    duration: int
-    summary: str
-    key_points: list[str]
-    action_items: list[dict]
 
 
 class MeetingListItem(BaseModel):
@@ -95,57 +86,38 @@ def start_meeting(db: Session = Depends(get_db)):
         started_at=now.isoformat()
     )
 
-@router.post("/{meeting_id}/stop", response_model=MeetingStopResponse)
-async def stop_meeting(
-    meeting_id: str, 
-    audio: UploadFile = File(...), 
-    db: Session = Depends(get_db)
-): 
-    # ── Fetch meeting from DB ─────────────────────────────────────────────────
-    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
-    # query Meeting table, find row where id matches, return first result
-    
-    if not meeting:
-        raise HTTPException(status_code=404, detail="Meeting not found")
-        # if no meeting found with this id, return 404 to frontend immediately
+class MeetingStopAck(BaseModel):
+    meeting_id: str
+    status: str
 
-    # ── Calculate duration ────────────────────────────────────────────────────
-    duration = int((datetime.utcnow() - meeting.date).total_seconds())
-    # current time minus when recording started = how long the meeting was
-    # .total_seconds() gives float like 2700.0 → int() converts to 2700
 
-    # ── Update status to processing ───────────────────────────────────────────
-    meeting.status = "processing"           # tells UI heavy work is happening
-    meeting.duration = duration             # save duration even before processing
-    db.commit()                             # write these two changes to disk now
-    
-    try: 
-        # ── Step 1: Transcribe ────────────────────────────────────────────────
-        audio_bytes = await audio.read()    # read entire audio file into memory as bytes
+def _process_meeting(meeting_id: str, audio_bytes: bytes):
+    """Background task: transcribe, clean, summarize, ingest."""
+    import json
+    from db.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+        if not meeting:
+            return
+
+        # Step 1: Transcribe + clean
         transcript = transcribe_audio(audio_bytes)
         transcript = clean_transcript(transcript)
-        # send bytes to HF Whisper API → returns transcript string
 
-        # ── Step 2: Generate title ────────────────────────────────────────────
+        # Step 2: Generate title
         title = (TITLE_PROMPT | llm | StrOutputParser()).invoke({
-            "transcript": transcript[:2000] # only first 2000 chars needed for title
+            "transcript": transcript[:2000]
         })
-        # LCEL chain: prompt → LLM → parse as string → returns "Q3 Budget Planning"
-        
 
-        # ── Step 3: Ingest into Chroma ────────────────────────────────────────
+        # Step 3: Ingest into Chroma
         ingest_transcript(transcript, meeting_id)
-        # splits transcript into chunks → embeds → stores in Chroma
-        # uses meeting_id as collection name so chunks are scoped to this meeting 
 
-        
-        # ── Step 4: Summarize ─────────────────────────────────────────────────
+        # Step 4: Summarize
         summary: MeetingSummary = summarize_transcript(transcript)
-        # sends full transcript to Gemini → returns MeetingSummary Pydantic object
-        # MeetingSummary has: summary, key_points, action_items
 
-        # ── Step 5: Update DB record ──────────────────────────────────────────
-        import json
+        # Step 5: Update DB
         meeting.title = title.strip()
         meeting.transcript = transcript
         meeting.summary = summary.summary
@@ -154,33 +126,45 @@ async def stop_meeting(
             {"task": item.task, "owner": item.owner, "due_date": item.due_date}
             for item in summary.action_items
         ])
+        meeting.audio_data = None  # clear audio after successful processing
         meeting.status = "processed"
         db.commit()
+        print(f"[OK] Meeting {meeting_id} processed successfully")
 
-        # Return response to frontend 
-        return MeetingStopResponse(
-            meeting_id=meeting_id, 
-            title=meeting.title, 
-            duration=duration, 
-            summary=summary.summary,        # The team discussed Q3 planning...."
-            key_points=summary.key_points, 
-            action_items=[
-                {
-                    "task": item.task, 
-                    "owner": item.owner, 
-                    "due_date": item.due_date
-                }
-
-                for item in summary.action_items  
-            ]
-        ) 
-    
     except Exception as e:
         import traceback
         traceback.print_exc()
         meeting.status = "failed"
         db.commit()
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[FAIL] Meeting {meeting_id}: {e}")
+    finally:
+        db.close()
+
+
+@router.post("/{meeting_id}/stop", response_model=MeetingStopAck)
+async def stop_meeting(
+    meeting_id: str,
+    audio: UploadFile = File(...),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    db: Session = Depends(get_db)
+):
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    # Save audio + update status immediately
+    audio_bytes = await audio.read()
+    duration = int((datetime.utcnow() - meeting.date).total_seconds())
+
+    meeting.audio_data = audio_bytes
+    meeting.duration = duration
+    meeting.status = "processing"
+    db.commit()
+
+    # Kick off processing in background
+    background_tasks.add_task(_process_meeting, meeting_id, audio_bytes)
+
+    return MeetingStopAck(meeting_id=meeting_id, status="processing")
     
 
 @router.get("/", response_model=list[MeetingListItem])

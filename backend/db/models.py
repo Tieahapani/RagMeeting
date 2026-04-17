@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Integer, String, Text, DateTime
+from sqlalchemy import Integer, String, Text, DateTime, LargeBinary
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db.database import Base
@@ -15,6 +15,7 @@ class Meeting(Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     key_points: Mapped[str | None] = mapped_column(Text, nullable=True)       # JSON string
     action_items: Mapped[str | None] = mapped_column(Text, nullable=True)     # JSON string
+    audio_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)  # raw audio for retry
     status: Mapped[str] = mapped_column(String, nullable=False, default="recording")
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
