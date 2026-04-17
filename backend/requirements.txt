@@ -17,3 +17,4 @@ langgraph
 google-generativeai
 requests>=2.32.5
 openai>=1.0.0
+gunicorn==22.0.0
