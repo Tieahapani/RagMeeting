@@ -37,7 +37,7 @@ app.include_router(query_router)     # /query/*
 app.include_router(settings_router)  # /settings/*
 
 # ── Health Check ──────────────────────────────────────────────────────────────
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health():
     return {"status": "ok"}
 
