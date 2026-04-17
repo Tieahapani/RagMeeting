@@ -1,3 +1,4 @@
+import base64
 import time
 import logging
 import requests
@@ -12,19 +13,31 @@ def _transcribe_chunk(audio_bytes: bytes, max_retries: int = 3) -> str:
     """Send a single audio chunk to HF Whisper API and return transcript text."""
     headers = {
         "Authorization": f"Bearer {settings.hf_token}",
-        "Content-Type": "audio/webm",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
     }
 
-    logger.info(f"Whisper request: audio_bytes size = {len(audio_bytes)}, first 20 bytes = {audio_bytes[:20]}")
+    payload = {
+        "inputs": base64.b64encode(audio_bytes).decode("utf-8"),
+        "parameters": {
+            "generation_parameters": {
+                "do_sample": False,
+                "temperature": 0,
+            }
+        },
+    }
+
+    print(f"[DEBUG] Whisper request: audio_bytes size = {len(audio_bytes)}")
 
     for attempt in range(max_retries):
         response = requests.post(
             HF_WHISPER_URL,
             headers=headers,
-            data=audio_bytes,
+            json=payload,
+            timeout=120,
         )
 
-        logger.info(f"Whisper response: status={response.status_code}, body={response.text[:500]}")
+        print(f"[DEBUG] Whisper response: status={response.status_code}, body={response.text[:500]}")
 
         if response.status_code == 503:
             wait = 20 if attempt == 0 else 10
@@ -38,7 +51,9 @@ def _transcribe_chunk(audio_bytes: bytes, max_retries: int = 3) -> str:
             time.sleep(wait)
             continue
 
-        response.raise_for_status()
+        if not response.ok:
+            raise RuntimeError(f"Whisper API error {response.status_code}: {response.text[:1000]}")
+
         data = response.json()
         transcript = data.get("text", "").strip()
 
