@@ -44,3 +44,5 @@ The frontend is hosted on **Vercel** and built with **React 19 + TypeScript**, *
 **Root Cause:** The entire processing pipeline ran synchronously inside the HTTP request handler. Gunicorn's default worker timeout is 30 seconds, so the worker was killed (SIGTERM) before processing finished.
 
 **Fix:** Redesigned the pipeline to use **FastAPI BackgroundTasks** with **progressive saving**. The `/stop` endpoint now saves the raw audio to the database and returns immediately with `status: "processing"`. All heavy work runs in the background, with each step saving its result independently. Raw audio is preserved in the database so users can hit **"Retry Processing"** on failed meetings without re-recording. Gunicorn timeout was also increased to **300 seconds** as an additional safety net.
+
+## Link for the Project : https://rag-meeting-afwu.vercel.app/
