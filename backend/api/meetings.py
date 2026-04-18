@@ -165,7 +165,27 @@ async def stop_meeting(
     background_tasks.add_task(_process_meeting, meeting_id, audio_bytes)
 
     return MeetingStopAck(meeting_id=meeting_id, status="processing")
-    
+
+
+@router.post("/{meeting_id}/retry", response_model=MeetingStopAck)
+def retry_meeting(
+    meeting_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """Retry processing a failed meeting using saved audio."""
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    if not meeting.audio_data:
+        raise HTTPException(status_code=400, detail="No saved audio to retry")
+
+    meeting.status = "processing"
+    db.commit()
+
+    background_tasks.add_task(_process_meeting, meeting_id, meeting.audio_data)
+    return MeetingStopAck(meeting_id=meeting_id, status="processing")
+
 
 @router.get("/", response_model=list[MeetingListItem])
 def list_meetings(db: Session = Depends(get_db)):
@@ -175,7 +195,7 @@ def list_meetings(db: Session = Depends(get_db)):
     """
     meetings = (
         db.query(Meeting)
-        .filter(Meeting.status == "processed")
+        .filter(Meeting.status.in_(["processed", "failed", "processing"]))
         .order_by(Meeting.date.desc())
         .all()
     )
