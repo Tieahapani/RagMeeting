@@ -8,6 +8,7 @@ function RecordMeeting() {
   const [status, setStatus] = useState('Ready to record')
   const [error, setError] = useState('')
   const [processing, setProcessing] = useState(false)
+  const [canRetry, setCanRetry] = useState(false)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -70,32 +71,54 @@ function RecordMeeting() {
       })
 
       if (!res.ok) throw new Error('Backend returned an error')
-
-      // Poll until processing is done
-      const poll = setInterval(async () => {
-        try {
-          const statusRes = await fetch(`${API_BASE}/meetings/${meetingId}`)
-          if (!statusRes.ok) return
-          const data = await statusRes.json()
-
-          if (data.status === 'processed') {
-            clearInterval(poll)
-            setStatus('Done! Redirecting...')
-            setTimeout(() => navigate(`/meeting/${meetingId}`), 1000)
-          } else if (data.status === 'failed') {
-            clearInterval(poll)
-            setError('Processing failed. Your recording is saved — you can retry later.')
-            setStatus('Error occurred')
-            setProcessing(false)
-          }
-        } catch {
-          // ignore polling errors, keep trying
-        }
-      }, 3000)
+      pollForResult(meetingId)
     } catch {
       setError('Failed to upload recording. Please try again.')
       setStatus('Error occurred')
       setProcessing(false)
+    }
+  }
+
+  function pollForResult(id: string) {
+    setProcessing(true)
+    setStatus('Processing your meeting...')
+    setError('')
+    setCanRetry(false)
+
+    const poll = setInterval(async () => {
+      try {
+        const statusRes = await fetch(`${API_BASE}/meetings/${id}`)
+        if (!statusRes.ok) return
+        const data = await statusRes.json()
+
+        if (data.status === 'processed') {
+          clearInterval(poll)
+          setStatus('Done! Redirecting...')
+          setTimeout(() => navigate(`/meeting/${id}`), 1000)
+        } else if (data.status === 'failed') {
+          clearInterval(poll)
+          setError('Processing failed. Your recording is saved — you can retry.')
+          setStatus('Error occurred')
+          setProcessing(false)
+          setCanRetry(true)
+        }
+      } catch {
+        // ignore polling errors, keep trying
+      }
+    }, 3000)
+  }
+
+  async function retryProcessing() {
+    if (!meetingId) return
+
+    try {
+      const res = await fetch(`${API_BASE}/meetings/${meetingId}/retry`, {
+        method: 'POST',
+      })
+      if (!res.ok) throw new Error('Retry failed')
+      pollForResult(meetingId)
+    } catch {
+      setError('Failed to retry. Please try again later.')
     }
   }
 
@@ -144,12 +167,22 @@ function RecordMeeting() {
       {/* Buttons */}
       {!processing && (
         !isRecording ? (
-          <button
-            onClick={startRecording}
-            className="bg-violet-600 hover:bg-violet-700 text-white px-8 py-3 rounded-xl text-sm font-medium transition-all shadow-lg shadow-violet-200 hover:shadow-xl hover:shadow-violet-300 cursor-pointer"
-          >
-            Start Recording
-          </button>
+          <div className="flex flex-col items-center gap-3">
+            <button
+              onClick={startRecording}
+              className="bg-violet-600 hover:bg-violet-700 text-white px-8 py-3 rounded-xl text-sm font-medium transition-all shadow-lg shadow-violet-200 hover:shadow-xl hover:shadow-violet-300 cursor-pointer"
+            >
+              Start Recording
+            </button>
+            {canRetry && (
+              <button
+                onClick={retryProcessing}
+                className="bg-amber-500 hover:bg-amber-600 text-white px-8 py-3 rounded-xl text-sm font-medium transition-all shadow-lg shadow-amber-200 hover:shadow-xl hover:shadow-amber-300 cursor-pointer"
+              >
+                Retry Processing
+              </button>
+            )}
+          </div>
         ) : (
           <button
             onClick={stopRecording}
