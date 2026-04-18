@@ -86,9 +86,21 @@ function MeetingList() {
           >
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-base font-semibold text-gray-900 group-hover:text-violet-700 transition-colors">
-                  {meeting.title}
-                </h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-semibold text-gray-900 group-hover:text-violet-700 transition-colors">
+                    {meeting.title}
+                  </h3>
+                  {meeting.status === 'failed' && (
+                    <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">
+                      Failed
+                    </span>
+                  )}
+                  {meeting.status === 'processing' && (
+                    <span className="text-xs bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full font-medium">
+                      Processing
+                    </span>
+                  )}
+                </div>
                 <p className="text-sm text-gray-400 mt-1">
                   {new Date(meeting.date).toLocaleDateString('en-US', {
                     month: 'short',

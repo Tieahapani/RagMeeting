@@ -13,7 +13,8 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from rag.preprocessor import clean_transcript
-from config.settings import settings 
+from config.settings import settings
+from services.retry import retry_on_rate_limit 
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
 
@@ -53,6 +54,7 @@ class MeetingDetailResponse(BaseModel):
     duration: int
     status: str
     summary: str | None
+    transcript: str | None
     key_points: list[str]
     action_items: list[dict]
 
@@ -92,7 +94,7 @@ class MeetingStopAck(BaseModel):
 
 
 def _process_meeting(meeting_id: str, audio_bytes: bytes):
-    """Background task: transcribe, clean, summarize, ingest."""
+    """Background task: transcribe, clean, summarize, ingest. Saves progress after each step."""
     import json
     from db.database import SessionLocal
 
@@ -102,31 +104,48 @@ def _process_meeting(meeting_id: str, audio_bytes: bytes):
         if not meeting:
             return
 
-        # Step 1: Transcribe + clean
+        # Step 1: Transcribe (Whisper) — save raw transcript immediately
         transcript = transcribe_audio(audio_bytes)
-        transcript = clean_transcript(transcript)
-
-        # Step 2: Generate title
-        title = (TITLE_PROMPT | llm | StrOutputParser()).invoke({
-            "transcript": transcript[:2000]
-        })
-
-        # Step 3: Ingest into Chroma
-        ingest_transcript(transcript, meeting_id)
-
-        # Step 4: Summarize
-        summary: MeetingSummary = summarize_transcript(transcript)
-
-        # Step 5: Update DB
-        meeting.title = title.strip()
         meeting.transcript = transcript
+        db.commit()
+        print(f"[STEP 1] Transcription done for {meeting_id}")
+
+        # Step 2: Clean transcript (Gemini) — save cleaned version
+        transcript = clean_transcript(transcript)
+        meeting.transcript = transcript
+        db.commit()
+        print(f"[STEP 2] Transcript cleaned for {meeting_id}")
+
+        # Step 3: Generate title (Gemini) — save title, use fallback if it fails
+        try:
+            title_chain = TITLE_PROMPT | llm | StrOutputParser()
+            title = retry_on_rate_limit(title_chain.invoke, {
+                "transcript": transcript[:2000]
+            })
+            meeting.title = title.strip()
+        except Exception as e:
+            print(f"[WARN] Title generation failed, using fallback: {e}")
+            meeting.title = f"Meeting on {meeting.date.strftime('%b %d, %I:%M %p')}"
+        db.commit()
+        print(f"[STEP 3] Title set for {meeting_id}: {meeting.title}")
+
+        # Step 4: Ingest into Chroma
+        ingest_transcript(transcript, meeting_id)
+        print(f"[STEP 4] Ingested into Chroma for {meeting_id}")
+
+        # Step 5: Summarize (Gemini) — save summary
+        summary: MeetingSummary = summarize_transcript(transcript)
         meeting.summary = summary.summary
         meeting.key_points = json.dumps(summary.key_points)
         meeting.action_items = json.dumps([
             {"task": item.task, "owner": item.owner, "due_date": item.due_date}
             for item in summary.action_items
         ])
-        meeting.audio_data = None  # clear audio after successful processing
+        db.commit()
+        print(f"[STEP 5] Summary done for {meeting_id}")
+
+        # All steps passed — clear audio, mark processed
+        meeting.audio_data = None
         meeting.status = "processed"
         db.commit()
         print(f"[OK] Meeting {meeting_id} processed successfully")
@@ -227,6 +246,7 @@ def get_meeting(meeting_id: str, db: Session = Depends(get_db)):
         duration=meeting.duration,
         status=meeting.status,
         summary=meeting.summary,
+        transcript=meeting.transcript if meeting.status == "failed" else None,
         key_points=json.loads(meeting.key_points) if meeting.key_points else [],
         action_items=json.loads(meeting.action_items) if meeting.action_items else [],
     )

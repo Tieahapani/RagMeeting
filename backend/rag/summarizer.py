@@ -4,6 +4,7 @@ from typing import Optional, List
 from pydantic import BaseModel, Field
 
 from config.settings import settings
+from services.retry import retry_on_rate_limit
 
 
 # Output Schema
@@ -45,4 +46,4 @@ def summarize_transcript(transcript: str) -> MeetingSummary:
     )
     structured_llm = llm.with_structured_output(MeetingSummary)
     chain = SUMMARY_PROMPT | structured_llm
-    return chain.invoke({"transcript": transcript})
+    return retry_on_rate_limit(chain.invoke, {"transcript": transcript})

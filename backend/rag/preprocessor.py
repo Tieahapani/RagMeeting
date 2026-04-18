@@ -1,6 +1,7 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from config.settings import settings
+from services.retry import retry_on_rate_limit
 
 CLEAN_TRANSCRIPT_PROMPT = ChatPromptTemplate.from_template("""
 You are a transcript editor. Your job is to clean up a raw speech-to-text transcript. 
@@ -39,7 +40,7 @@ def clean_transcript(transcript: str) -> str:
 
     )
 
-    chain = CLEAN_TRANSCRIPT_PROMPT | llm 
+    chain = CLEAN_TRANSCRIPT_PROMPT | llm
 
-    result = chain.invoke({"transcript": transcript})
+    result = retry_on_rate_limit(chain.invoke, {"transcript": transcript})
     return result.content 

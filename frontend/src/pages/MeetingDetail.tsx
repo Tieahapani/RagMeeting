@@ -17,6 +17,7 @@ interface MeetingData {
   duration: number
   status: string
   summary: string | null
+  transcript: string | null
   key_points: string[]
   action_items: ActionItem[]
 }
@@ -38,6 +39,7 @@ function MeetingDetail() {
   const [meeting, setMeeting] = useState<MeetingData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [retrying, setRetrying] = useState(false)
 
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [question, setQuestion] = useState('')
@@ -209,6 +211,30 @@ function MeetingDetail() {
     setQuestion(lastUserMsg.text)
   }
 
+  async function retryProcessing() {
+    if (!id) return
+    setRetrying(true)
+    try {
+      const res = await fetch(`${API_BASE}/meetings/${id}/retry`, { method: 'POST' })
+      if (!res.ok) throw new Error('Retry failed')
+
+      // Poll until done
+      const poll = setInterval(async () => {
+        const statusRes = await fetch(`${API_BASE}/meetings/${id}`)
+        if (!statusRes.ok) return
+        const data = await statusRes.json()
+        if (data.status === 'processed' || data.status === 'failed') {
+          clearInterval(poll)
+          setMeeting(data)
+          setRetrying(false)
+        }
+      }, 3000)
+    } catch {
+      setError('Retry failed. Please try again later.')
+      setRetrying(false)
+    }
+  }
+
   function formatDuration(seconds: number): string {
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
@@ -247,6 +273,44 @@ function MeetingDetail() {
           {formatDuration(meeting.duration)}
         </p>
       </div>
+
+      {/* Failed Meeting Banner */}
+      {meeting.status === 'failed' && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-medium text-red-700">
+              Processing failed — your recording is saved.
+            </p>
+            <button
+              onClick={retryProcessing}
+              disabled={retrying}
+              className="bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:cursor-not-allowed"
+            >
+              {retrying ? 'Retrying...' : 'Retry Processing'}
+            </button>
+          </div>
+          {meeting.transcript && (
+            <details className="mt-2">
+              <summary className="text-sm text-red-600 cursor-pointer hover:text-red-800">
+                View saved transcript
+              </summary>
+              <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap bg-white rounded-lg p-4 max-h-60 overflow-y-auto">
+                {meeting.transcript}
+              </p>
+            </details>
+          )}
+        </div>
+      )}
+
+      {/* Processing Banner */}
+      {meeting.status === 'processing' && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 flex items-center gap-3">
+          <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm font-medium text-amber-700">
+            Processing your meeting — this may take a minute...
+          </p>
+        </div>
+      )}
 
       {/* Summary */}
       {meeting.summary && (
